@@ -92,13 +92,16 @@ export function resolveElement(
   }
 
   // Priority 6: Positional fallback (tag + sibling index)
-  if (selectors.tagName) {
-    const all = document.querySelectorAll(selectors.tagName);
-    for (const el of all) {
-      if (getSiblingIndex(el) === selectors.siblingIndex) {
-        return { element: el, priority: 6 };
+  // Use CSS selector to scope to the correct parent's children only,
+  // not all elements of that tagName across the entire page.
+  if (selectors.css) {
+    try {
+      // Try the CSS selector path but accept even if multiple matches
+      const candidates = document.querySelectorAll(selectors.css);
+      if (candidates.length > 0) {
+        return { element: candidates[0], priority: 6 };
       }
-    }
+    } catch { /* skip */ }
   }
 
   return null;
