@@ -53,6 +53,7 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
         startedAt: Date.now(),
         selectorSet: config.selectorSet,
         clickIntervalMs: config.clickIntervalMs,
+        clickEnabled: config.clickEnabled,
         refreshIntervalSec: config.refreshIntervalSec,
         refreshEnabled: config.refreshEnabled,
         repeatCount: config.repeatCount,
@@ -115,7 +116,7 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
 
 async function injectAndStartClicker(
   tabId: number,
-  config: { selectorSet: any; clickIntervalMs: number; repeatCount: number }
+  config: { selectorSet: any; clickIntervalMs: number; clickEnabled: boolean; repeatCount: number }
 ) {
   // Content scripts are already injected via manifest.
   // Send start message to clicker.
@@ -124,6 +125,7 @@ async function injectAndStartClicker(
     config: {
       selectorSet: config.selectorSet,
       clickIntervalMs: config.clickIntervalMs,
+      clickEnabled: config.clickEnabled,
       repeatCount: config.repeatCount,
     },
   });
@@ -193,6 +195,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   const config = {
     selectorSet: state.selectorSet,
     clickIntervalMs: state.clickIntervalMs,
+    clickEnabled: state.clickEnabled ?? true,
     repeatCount: state.repeatCount > 0
       ? Math.max(0, state.repeatCount - state.clickCount)
       : 0,
@@ -207,6 +210,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
         // Already self-started, just update badge
         chrome.action.setBadgeText({ text: '▶' });
         chrome.action.setBadgeBackgroundColor({ color: '#2e7d32' });
+        // Re-schedule refresh timer even when clicker self-started
+        if (state.refreshEnabled && state.refreshIntervalSec > 0) {
+          startRefreshTimer(state.refreshIntervalSec);
+        }
         return;
       }
       // Not running — send start command
@@ -237,6 +244,7 @@ async function onStartup() {
         await injectAndStartClicker(state.tabId, {
           selectorSet: state.selectorSet,
           clickIntervalMs: state.clickIntervalMs,
+          clickEnabled: state.clickEnabled ?? true,
           repeatCount: state.repeatCount > 0
             ? Math.max(0, state.repeatCount - state.clickCount)
             : 0,
