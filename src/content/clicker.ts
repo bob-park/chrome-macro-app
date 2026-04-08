@@ -95,14 +95,18 @@ function stopClicking() {
 // Listen for messages from service worker
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'START_MACRO') {
-    const { selectorSet, clickIntervalMs, repeatCount } = msg.config;
-    startClicking(selectorSet, clickIntervalMs, repeatCount);
+    const { selectorSet, clickIntervalMs, clickEnabled, repeatCount } = msg.config;
+    if (clickEnabled ?? true) {
+      startClicking(selectorSet, clickIntervalMs, repeatCount);
+    }
     sendResponse({ ok: true });
   } else if (msg.type === 'STOP_MACRO') {
     stopClicking();
     sendResponse({ ok: true, clickCount });
   } else if (msg.type === 'GET_CLICK_COUNT') {
     sendResponse({ clickCount, running: intervalId !== null });
+  } else {
+    return; // Not handled — don't hold the message channel open
   }
   return true;
 });
@@ -116,6 +120,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     const result = await chrome.storage.local.get('activeState');
     const state = result.activeState;
     if (state?.running && state.selectorSet) {
+      // Skip click loop if clicking is disabled
+      if (!(state.clickEnabled ?? true)) return;
+
       // Calculate remaining clicks if repeat count is set
       const remaining = state.repeatCount > 0
         ? Math.max(0, state.repeatCount - (state.clickCount || 0))
