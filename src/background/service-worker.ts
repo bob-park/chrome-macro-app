@@ -2,6 +2,7 @@ import { getActiveState, setActiveState, clearActiveState } from '../shared/stor
 import type { ActiveState, Message } from '../shared/types';
 
 const REFRESH_ALARM = 'macro-refresh';
+let refreshTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
 // ---- Message handling ----
 
@@ -61,11 +62,11 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
       // Inject clicker and start
       await injectAndStartClicker(tab.id, config);
 
-      // Set up refresh alarm if enabled
+      // Set up refresh timer if enabled
+      // Using setTimeout chain instead of chrome.alarms because alarms
+      // have a 1-minute minimum period, but users need sub-minute refresh.
       if (config.refreshEnabled && config.refreshIntervalSec > 0) {
-        await chrome.alarms.create(REFRESH_ALARM, {
-          periodInMinutes: config.refreshIntervalSec / 60,
-        });
+        startRefreshTimer(config.refreshIntervalSec);
       }
 
       broadcastStateUpdate();
@@ -85,14 +86,14 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
 
     case 'MACRO_STOPPED': {
       await setActiveState({ running: false });
-      await chrome.alarms.clear(REFRESH_ALARM);
+      stopRefreshTimer();
       broadcastStateUpdate();
       return { ok: true };
     }
 
     case 'STEP_FAILED': {
       await setActiveState({ running: false });
-      await chrome.alarms.clear(REFRESH_ALARM);
+      stopRefreshTimer();
       // Set badge to indicate error
       chrome.action.setBadgeText({ text: '!' });
       chrome.action.setBadgeBackgroundColor({ color: '#e94560' });
@@ -145,30 +146,38 @@ async function stopMacro() {
     }
   }
 
-  await chrome.alarms.clear(REFRESH_ALARM);
+  stopRefreshTimer();
   await setActiveState({ running: false });
 
   chrome.action.setBadgeText({ text: '' });
   broadcastStateUpdate();
 }
 
-// ---- Refresh alarm ----
+// ---- Refresh timer (setTimeout chain for sub-minute intervals) ----
 
-chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name !== REFRESH_ALARM) return;
+function startRefreshTimer(intervalSec: number) {
+  stopRefreshTimer();
+  const scheduleNext = () => {
+    refreshTimeoutId = setTimeout(async () => {
+      const state = await getActiveState();
+      if (!state.running || !state.tabId || !state.refreshEnabled) {
+        stopRefreshTimer();
+        return;
+      }
+      await setActiveState({ refreshCount: state.refreshCount + 1 });
+      await chrome.tabs.reload(state.tabId);
+      // Next refresh is scheduled after page load completes (see tabs.onUpdated handler)
+    }, intervalSec * 1000);
+  };
+  scheduleNext();
+}
 
-  const state = await getActiveState();
-  if (!state.running || !state.tabId || !state.refreshEnabled) {
-    await chrome.alarms.clear(REFRESH_ALARM);
-    return;
+function stopRefreshTimer() {
+  if (refreshTimeoutId !== null) {
+    clearTimeout(refreshTimeoutId);
+    refreshTimeoutId = null;
   }
-
-  // Increment refresh count
-  await setActiveState({ refreshCount: state.refreshCount + 1 });
-
-  // Reload the tab
-  await chrome.tabs.reload(state.tabId);
-});
+}
 
 // ---- Re-start clicker after page load (post-refresh) ----
 // The content script (clicker.ts) self-starts by reading storage on load.
@@ -204,6 +213,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
       await chrome.tabs.sendMessage(tabId, { type: 'START_MACRO', config });
       chrome.action.setBadgeText({ text: '▶' });
       chrome.action.setBadgeBackgroundColor({ color: '#2e7d32' });
+      // Re-schedule refresh timer after page load
+      if (state.refreshEnabled && state.refreshIntervalSec > 0) {
+        startRefreshTimer(state.refreshIntervalSec);
+      }
       return;
     } catch {
       // Content script not ready yet, wait and retry
@@ -230,9 +243,7 @@ async function onStartup() {
         });
 
         if (state.refreshEnabled && state.refreshIntervalSec > 0) {
-          await chrome.alarms.create(REFRESH_ALARM, {
-            periodInMinutes: state.refreshIntervalSec / 60,
-          });
+          startRefreshTimer(state.refreshIntervalSec);
         }
       }
     } catch {
