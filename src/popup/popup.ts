@@ -10,6 +10,7 @@ let savedConfigs: MacroConfig[] = [];
 
 // Settings (local to popup, synced on start/save)
 let clickIntervalMs = 500;
+let clickEnabled = true;
 let refreshIntervalSec = 30;
 let refreshEnabled = false;
 let repeatCount = 0;
@@ -21,6 +22,7 @@ async function init() {
   if (resp?.state) {
     state = resp.state;
     clickIntervalMs = state.clickIntervalMs || 500;
+    clickEnabled = state.clickEnabled ?? true;
     refreshIntervalSec = state.refreshIntervalSec || 30;
     refreshEnabled = state.refreshEnabled || false;
     repeatCount = state.repeatCount || 0;
@@ -164,30 +166,35 @@ function renderSelectorSection(): HTMLElement {
 
 function renderSettingsSection(): HTMLElement {
   const section = el('div', 'section');
-  const title = el('div', 'section-title');
-  title.textContent = 'Settings';
-  section.appendChild(title);
 
-  // Click interval
+  // Click Settings group
+  const clickTitle = el('div', 'section-title');
+  clickTitle.innerHTML = `Click <button id="click-toggle" class="toggle ${clickEnabled ? 'on' : ''}"></button>`;
+  section.appendChild(clickTitle);
+
   section.appendChild(settingRow(
     'Click Interval', '클릭 주기',
-    `<input type="number" id="click-interval" value="${clickIntervalMs}" min="10" step="10">
+    `<input type="number" id="click-interval" value="${clickIntervalMs}" min="10" step="10" ${!clickEnabled ? 'disabled' : ''}>
      <span class="unit">ms</span>`
   ));
 
-  // Refresh interval
-  section.appendChild(settingRow(
-    'Page Refresh', '새로고침 주기',
-    `<input type="number" id="refresh-interval" value="${refreshIntervalSec}" min="1">
-     <span class="unit">sec</span>
-     <button id="refresh-toggle" class="toggle ${refreshEnabled ? 'on' : ''}"></button>`
-  ));
-
-  // Repeat count
+  // Repeat count (click-only)
   section.appendChild(settingRow(
     'Repeat Count', '반복 횟수 (0 = 무제한)',
-    `<input type="number" id="repeat-count" value="${repeatCount}" min="0">
+    `<input type="number" id="repeat-count" value="${repeatCount}" min="0" ${!clickEnabled ? 'disabled' : ''}>
      <span class="unit">times</span>`
+  ));
+
+  // Refresh Settings group
+  const refreshTitle = el('div', 'section-title');
+  refreshTitle.style.marginTop = '16px';
+  refreshTitle.innerHTML = `Page Refresh <button id="refresh-toggle" class="toggle ${refreshEnabled ? 'on' : ''}"></button>`;
+  section.appendChild(refreshTitle);
+
+  section.appendChild(settingRow(
+    'Refresh Interval', '새로고침 주기',
+    `<input type="number" id="refresh-interval" value="${refreshIntervalSec}" min="1" ${!refreshEnabled ? 'disabled' : ''}>
+     <span class="unit">sec</span>`
   ));
 
   return section;
@@ -196,9 +203,12 @@ function renderSettingsSection(): HTMLElement {
 function renderSettingsReadonly(): HTMLElement {
   const section = el('div', 'section');
 
-  section.appendChild(settingRow('Click Interval', '', `<span class="unit" style="color:#333;font-weight:500">every ${state.clickIntervalMs} ms</span>`));
+  const isClickOn = state.clickEnabled ?? true;
+  section.appendChild(settingRow('Click', '', `<span class="unit" style="color:#333;font-weight:500">${isClickOn ? `every ${state.clickIntervalMs} ms` : 'Off'}</span>`));
+  if (isClickOn && state.repeatCount > 0) {
+    section.appendChild(settingRow('Repeat', '', `<span class="unit" style="color:#333;font-weight:500">${state.repeatCount} times</span>`));
+  }
   section.appendChild(settingRow('Page Refresh', '', `<span class="unit" style="color:#333;font-weight:500">${state.refreshEnabled ? `every ${state.refreshIntervalSec} sec` : 'Off'}</span>`));
-  section.appendChild(settingRow('Repeat', '', `<span class="unit" style="color:#333;font-weight:500">${state.repeatCount > 0 ? `${state.repeatCount} times` : 'Unlimited'}</span>`));
 
   return section;
 }
@@ -212,10 +222,11 @@ function renderRunningStats(): HTMLElement {
 
   const elapsed = state.startedAt ? formatDuration(Date.now() - state.startedAt) : '-';
 
+  const isClickOn = state.clickEnabled ?? true;
   stats.innerHTML = `
     <div class="stat-row"><span>Target</span><span class="stat-value">${escapeHtml(target)}</span></div>
-    <div class="stat-row"><span>Clicks performed</span><span class="stat-value">${state.clickCount}</span></div>
-    <div class="stat-row"><span>Page refreshes</span><span class="stat-value">${state.refreshCount}</span></div>
+    ${isClickOn ? `<div class="stat-row"><span>Clicks performed</span><span class="stat-value">${state.clickCount}</span></div>` : ''}
+    ${state.refreshEnabled ? `<div class="stat-row"><span>Page refreshes</span><span class="stat-value">${state.refreshCount}</span></div>` : ''}
     <div class="stat-row"><span>Running for</span><span class="stat-value">${elapsed}</span></div>
   `;
 
@@ -274,15 +285,20 @@ function renderActionArea(): HTMLElement {
     btn.textContent = '■ Stop Macro';
     area.appendChild(btn);
   } else if (currentTab === 'setup') {
-    if (state.selectorSet) {
+    if (!state.selectorSet) {
       const btn = el('button', 'btn-primary');
-      btn.id = 'start-btn';
-      btn.textContent = '▶ Start Macro';
+      (btn as HTMLButtonElement).disabled = true;
+      btn.textContent = '▶ Start — pick an element first';
+      area.appendChild(btn);
+    } else if (!clickEnabled && !refreshEnabled) {
+      const btn = el('button', 'btn-primary');
+      (btn as HTMLButtonElement).disabled = true;
+      btn.textContent = '▶ Start — enable click or refresh';
       area.appendChild(btn);
     } else {
       const btn = el('button', 'btn-primary');
-      btn.disabled = true;
-      btn.textContent = '▶ Start — pick an element first';
+      btn.id = 'start-btn';
+      btn.textContent = '▶ Start Macro';
       area.appendChild(btn);
     }
   } else {
@@ -341,9 +357,13 @@ function bindEvents() {
   document.getElementById('repeat-count')?.addEventListener('change', (e) => {
     repeatCount = Math.max(0, parseInt((e.target as HTMLInputElement).value) || 0);
   });
-  document.getElementById('refresh-toggle')?.addEventListener('click', (e) => {
+  document.getElementById('click-toggle')?.addEventListener('click', () => {
+    clickEnabled = !clickEnabled;
+    render();
+  });
+  document.getElementById('refresh-toggle')?.addEventListener('click', () => {
     refreshEnabled = !refreshEnabled;
-    (e.target as HTMLElement).classList.toggle('on', refreshEnabled);
+    render();
   });
 
   // Start
@@ -354,6 +374,7 @@ function bindEvents() {
       config: {
         selectorSet: state.selectorSet,
         clickIntervalMs,
+        clickEnabled,
         refreshIntervalSec,
         refreshEnabled,
         repeatCount,
@@ -378,6 +399,7 @@ function bindEvents() {
       name,
       selectorSet: state.selectorSet,
       clickIntervalMs,
+      clickEnabled,
       refreshIntervalSec,
       refreshEnabled,
       repeatCount,
@@ -403,6 +425,7 @@ function bindEvents() {
         targetUrl: config.targetUrl,
       };
       clickIntervalMs = config.clickIntervalMs;
+      clickEnabled = config.clickEnabled ?? true;
       refreshIntervalSec = config.refreshIntervalSec;
       refreshEnabled = config.refreshEnabled;
       repeatCount = config.repeatCount;

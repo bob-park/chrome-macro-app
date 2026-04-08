@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.1.0] - 2026-04-08
+
+### Added
+- Independent click on/off toggle, matching the existing page refresh toggle pattern
+- Settings UI grouped into Click and Refresh sections with per-section on/off controls
+- Disabled input styling when a section's toggle is off
+- Start button validation preventing macro launch when both click and refresh are disabled
+- Backward-compatible `clickEnabled` field with field-level default merge in storage
+
+### Fixed
+- Page refresh timer only firing once after first reload (missing `startRefreshTimer()` in self-started branch)
+- Chrome message channel error ("listener indicated async response but channel closed") when content script received unhandled message types
+- Section title alignment for toggle buttons (flexbox + center alignment)
+
 ## [1.0.0.0] - 2026-04-08
 
 ### Added

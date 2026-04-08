@@ -15,6 +15,7 @@ export interface MacroConfig {
   name: string;
   selectorSet: SelectorSet;
   clickIntervalMs: number;
+  clickEnabled: boolean;
   refreshIntervalSec: number;
   refreshEnabled: boolean;
   repeatCount: number;
@@ -32,6 +33,7 @@ export interface ActiveState {
   startedAt: number | null;
   selectorSet: SelectorSet | null;
   clickIntervalMs: number;
+  clickEnabled: boolean;
   refreshIntervalSec: number;
   refreshEnabled: boolean;
   repeatCount: number;
@@ -47,6 +49,7 @@ export const DEFAULT_ACTIVE_STATE: ActiveState = {
   startedAt: null,
   selectorSet: null,
   clickIntervalMs: 500,
+  clickEnabled: true,
   refreshIntervalSec: 30,
   refreshEnabled: false,
   repeatCount: 0,
@@ -58,7 +61,7 @@ export type Message =
   | { type: 'START_PICKING' }
   | { type: 'CANCEL_PICKING' }
   | { type: 'ELEMENT_PICKED'; selectorSet: SelectorSet; url: string }
-  | { type: 'START_MACRO'; config: Pick<ActiveState, 'selectorSet' | 'clickIntervalMs' | 'refreshIntervalSec' | 'refreshEnabled' | 'repeatCount' | 'targetUrl'> }
+  | { type: 'START_MACRO'; config: Pick<ActiveState, 'selectorSet' | 'clickIntervalMs' | 'clickEnabled' | 'refreshIntervalSec' | 'refreshEnabled' | 'repeatCount' | 'targetUrl'> }
   | { type: 'STOP_MACRO' }
   | { type: 'MACRO_STATUS'; clickCount: number; running: boolean }
   | { type: 'MACRO_STOPPED' }
