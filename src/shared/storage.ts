@@ -5,7 +5,8 @@ const CONFIG_PREFIX = 'config-';
 
 export async function getActiveState(): Promise<ActiveState> {
   const result = await chrome.storage.local.get(ACTIVE_STATE_KEY);
-  return result[ACTIVE_STATE_KEY] ?? { ...DEFAULT_ACTIVE_STATE };
+  const stored = result[ACTIVE_STATE_KEY] as Partial<ActiveState> | undefined;
+  return stored ? { ...DEFAULT_ACTIVE_STATE, ...stored } : { ...DEFAULT_ACTIVE_STATE };
 }
 
 export async function setActiveState(state: Partial<ActiveState>): Promise<ActiveState> {
