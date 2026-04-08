@@ -2,8 +2,10 @@ import { resolveElement } from '../shared/selector';
 import type { SelectorSet } from '../shared/types';
 
 let intervalId: ReturnType<typeof setInterval> | null = null;
+let reportTimeoutId: ReturnType<typeof setTimeout> | null = null;
 let clickCount = 0;
 let maxClicks = 0; // 0 = unlimited
+let lastReportedCount = 0;
 
 function startClicking(selectorSet: SelectorSet, intervalMs: number, repeatCount: number) {
   stopClicking();
@@ -48,11 +50,17 @@ function startClicking(selectorSet: SelectorSet, intervalMs: number, repeatCount
 
     clickCount++;
 
-    // Report progress
-    chrome.runtime.sendMessage({
-      type: 'CLICK_UPDATE',
-      clickCount,
-    });
+    // Throttle click count reporting to max 1/sec to avoid flooding
+    // the service worker with storage writes at fast intervals (e.g. 10ms)
+    if (!reportTimeoutId) {
+      reportTimeoutId = setTimeout(() => {
+        reportTimeoutId = null;
+        if (clickCount !== lastReportedCount) {
+          lastReportedCount = clickCount;
+          chrome.runtime.sendMessage({ type: 'CLICK_UPDATE', clickCount });
+        }
+      }, 1000);
+    }
 
     // Check repeat limit
     if (maxClicks > 0 && clickCount >= maxClicks) {
@@ -72,6 +80,15 @@ function stopClicking() {
   if (intervalId !== null) {
     clearInterval(intervalId);
     intervalId = null;
+  }
+  // Flush pending count report
+  if (reportTimeoutId !== null) {
+    clearTimeout(reportTimeoutId);
+    reportTimeoutId = null;
+  }
+  if (clickCount !== lastReportedCount) {
+    lastReportedCount = clickCount;
+    chrome.runtime.sendMessage({ type: 'CLICK_UPDATE', clickCount });
   }
 }
 
